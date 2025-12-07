@@ -1,0 +1,12 @@
+.vscode
+.DS_Store
+Makefile
+test
+main
+writer_test
+reader_test
+producer_test
+consumer_test
+ts_queue_test
+tests/*.out
+*.dSYM
