@@ -63,9 +63,16 @@ int main(int argc, char** argv) {
 
 	// main 必須要等待 reader 讀完整個 input file 後才能結束
 	reader->join();
+	for (int i = 0; i < 4; i++) {
+		input_queue->enqueue(nullptr);
+	}
+	for (auto& producer : producers) {
+		producer->join();
+	}
 	// main 等待 writer 寫完所有內容到 ouput file 後才能結束
 	writer->join();
 
+	consumer_controller->cancel();
 	// 6. 釋放 main 中配置的記憶體
 	delete reader;
 	delete writer;

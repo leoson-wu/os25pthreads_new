@@ -55,13 +55,9 @@ void* Writer::process(void* arg) {
 		Item* item = writer->output_queue->dequeue();
 
 		// 2. 將 item 寫入 output file
-		if (item != nullptr) {
-			writer->ofs << *item << std::endl;
-			delete item; // 寫入後釋放 item 記憶體
-		} else {
-			// 若取出的 item 是 nullptr, 表示沒有更多 item 可以處理, 結束 writer thread
-			break;
-		}
+		
+		writer->ofs << *item;
+		delete item; // 寫入後釋放 item 記憶體
 	}
 	return nullptr;
 }

@@ -61,9 +61,9 @@ void* Consumer::process(void* arg) {
 		// consumer 負責從 worker_queue 中取出 item, 並丟到 output_queue 中
 		Item* item = consumer->worker_queue->dequeue();
 		
+		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
+
 		if (item == nullptr) {
-			// 若取出的 item 是 nullptr, 表示沒有更多 item 可以處理, 結束 consumer thread
-			// 將 nullptr 放回 output_queue 以通知 writer thread 結束
 			consumer->output_queue->enqueue(nullptr);
 			break;
 		}
@@ -73,7 +73,6 @@ void* Consumer::process(void* arg) {
 		// 3. 將 transform 後的 item 放入 output_queue
 		consumer->output_queue->enqueue(item);
 
-		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
 	}
 	// 若是被 cancel 的話, 釋放 consumer 的記憶體
 	if (consumer->is_cancel) {

@@ -51,8 +51,6 @@ void* Producer::process(void* arg) {
 
 		if (item == nullptr) {
 			// 若取出的 item 是 nullptr, 表示沒有更多 item 可以處理, 結束 producer thread
-			// 將 nullptr 放回 worker_queue 以通知 consumer thread 結束
-			producer->worker_queue->enqueue(nullptr);
 			break;
 		}
 		// 2. do the producing transformation
