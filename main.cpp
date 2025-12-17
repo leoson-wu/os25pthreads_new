@@ -31,8 +31,7 @@ int main(int argc, char** argv) {
 	// 2. initialize transformer
 	Transformer* transformer = new Transformer();
 
-	// 3. initialize each thread: 1 reader, 1 writer, 4 producers, 
-
+	// 3. initialize each thread: 1 reader, 1 writer, 4 producers 
 	Reader* reader = new Reader(n, input_file_name, input_queue);
 	Writer* writer = new Writer(n, output_file_name, output_queue);
 	std::vector<Producer*> producers;
@@ -56,8 +55,8 @@ int main(int argc, char** argv) {
 	// 5. start all threads
 	reader->start();
 	writer->start();
-	for (auto& producer : producers) {
-		producer->start();
+	for (auto& p : producers) {
+		p->start();
 	}
 	consumer_controller->start();
 
@@ -66,8 +65,8 @@ int main(int argc, char** argv) {
 	for (int i = 0; i < 4; i++) {
 		input_queue->enqueue(nullptr);
 	}
-	for (auto& producer : producers) {
-		producer->join();
+	for (auto& p : producers) {
+		p->join();
 	}
 	// main 等待 writer 寫完所有內容到 ouput file 後才能結束
 	writer->join();

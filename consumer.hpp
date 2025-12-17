@@ -52,7 +52,9 @@ int Consumer::cancel() {
 void* Consumer::process(void* arg) {
 	Consumer* consumer = (Consumer*)arg;
 
-	pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, nullptr);
+	// 設置 thread 的 cancel type 為 deferred cancelation:
+	// ->不馬上取消 thread, 而是在 thread 執行到可以被取消的點時才取消
+ 	pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, nullptr);
 
 	while (!consumer->is_cancel) {
 		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
@@ -73,12 +75,14 @@ void* Consumer::process(void* arg) {
 		// 3. 將 transform 後的 item 放入 output_queue
 		consumer->output_queue->enqueue(item);
 
+		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
+		
+		pthread_testcancel();
 	}
-	// 若是被 cancel 的話, 釋放 consumer 的記憶體
+	// 若要被 cancel 的話, 釋放 consumer 的記憶體
 	if (consumer->is_cancel) {
 		delete consumer;
 	}
-	
 
 	return nullptr;
 }
