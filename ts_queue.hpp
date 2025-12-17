@@ -95,6 +95,8 @@ void TSQueue<T>::enqueue(T item) {
 	while (size == buffer_size) {
 		pthread_cond_wait(&cond_enqueue, &mutex);
 	}
+	pthread_cleanup_pop(0); // 取消註冊 cleanup handler，因為接下來不會再被 cancel 了
+
 	// 2. 將 item 放入 buffer 的 tail
 	buffer[tail] = item;
 	tail = (tail + 1) % buffer_size; // update 尾端的 index
@@ -118,6 +120,8 @@ T TSQueue<T>::dequeue() {
 	while (size == 0) {
 		pthread_cond_wait(&cond_dequeue, &mutex);
 	}
+	// revision note:
+	pthread_cleanup_pop(0); // 取消註冊 cleanup handler
 	// 2. 從 buffer 的 head 拿出 item
 	item = buffer[head];
 	head = (head + 1) % buffer_size; // update 頭端的 index

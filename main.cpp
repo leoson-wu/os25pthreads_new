@@ -72,6 +72,7 @@ int main(int argc, char** argv) {
 	writer->join();
 
 	consumer_controller->cancel();
+	consumer_controller->join();
 	// 6. 釋放 main 中配置的記憶體
 	delete reader;
 	delete writer;

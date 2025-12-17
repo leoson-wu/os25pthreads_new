@@ -63,6 +63,7 @@ void* Consumer::process(void* arg) {
 		// consumer 負責從 worker_queue 中取出 item, 並丟到 output_queue 中
 		Item* item = consumer->worker_queue->dequeue();
 		
+		// 2. 拿到工作後，禁止被取消，確保 Item 不會丟失
 		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
 
 		if (item == nullptr) {
