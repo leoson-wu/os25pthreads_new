@@ -40,6 +40,12 @@ Reader::~Reader() {
 
 void Reader::start() {
 	pthread_create(&t, 0, Reader::process, (void*)this);
+	/*
+	arg1: pointer to pthread_t -> thread 創建成功後會獲得該 thread 的 ID
+	arg2: pthread attributes, 0 means default attributes
+	arg3: pointer to the function to be executed by the thread
+	arg4: argument to be passed to the function
+	*/
 }
 
 void* Reader::process(void* arg) {

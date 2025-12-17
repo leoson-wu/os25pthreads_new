@@ -34,6 +34,7 @@ Producer::~Producer() {}
 
 void Producer::start() {
 	// TODO: starts a Producer thread
+	// 第三個 arg 是這個 thread 要執行的function pointer
 	pthread_create(&t, 0, Producer::process, (void*)this);
 }
 

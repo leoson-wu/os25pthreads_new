@@ -41,7 +41,6 @@ Writer::~Writer() {
 void Writer::start() {
 	// TODO: starts a Writer thread
 	pthread_create(&t, 0, Writer::process, (void*)this); 
-	// phread_create 的參數分別為 pthread_t*, pthread_attr_t*, function pointer, function argument
 }
 
 void* Writer::process(void* arg) {

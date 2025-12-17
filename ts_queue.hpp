@@ -81,7 +81,7 @@ void TSQueue<T>::enqueue(T item) {
 	// TODO: enqueues an element to the end of the queue
 
 	pthread_mutex_lock(&mutex); // lock mutex
-	// 1. 當 buffer is full, 用 busy waitting 持續等待直到 consumer dequeue
+	// 1. 當 buffer is full, 用 busy waitting 卡 producer 持續等待直到 consumer dequeue
 	while (size == buffer_size) {
 		pthread_cond_wait(&cond_enqueue, &mutex);
 	}
@@ -98,7 +98,7 @@ T TSQueue<T>::dequeue() {
 	// TODO: dequeues the first element of the queue
 
 	T item;
-	pthread_mutex_lock(&mutex); // lock mutex
+	pthread_mutex_lock(&mutex);
 
 	// 1. 當 buffer is empty, 用 busy waitting 持續等待直到 producer enqueue
 	while (size == 0) {
@@ -109,7 +109,8 @@ T TSQueue<T>::dequeue() {
 	head = (head + 1) % buffer_size; // update 頭端的 index
 	size--; // update 減少一個 item 後的 size
 	pthread_cond_signal(&cond_enqueue); // 嘗試 wake up producer (因為 buffer 中有空間了, producer 若卡在 waiting condition 下可以被 waken up)
-	pthread_mutex_unlock(&mutex); // unlock mutex
+	pthread_mutex_unlock(&mutex);
+
 	return item;
 }
 
@@ -117,9 +118,9 @@ template <class T>
 int TSQueue<T>::get_size() {
 	// TODO: returns the size of the queue
 	int current_size;
-	pthread_mutex_lock(&mutex); // lock mutex
-	current_size = size;
-	pthread_mutex_unlock(&mutex); // unlock mutex
+	pthread_mutex_lock(&mutex);
+	current_size = size; 
+	pthread_mutex_unlock(&mutex);
 	return current_size;
 }
 
