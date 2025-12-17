@@ -12,8 +12,12 @@
 
 ### TSQueue
 在`ts_queue.hpp`中利用 pthread lib 實作 threads safe queue，作為 buffer 空間的資料結構，  
-目的是可以支援多個 threads cocurrently 的**共享**/**存取** 這個空間  
-1. constructor
+目的是可以支援多個 threads cocurrently 的 **共享**/**存取** 這個空間  
+1. constructor:  
+   - 配置 **buffer** 空間，並以 **queue** 的結構管理，支援 `enqueue()`, `dequeue()`, `get_size()` 的 member functions  
+   - 為了避免 **race condition** 以及 **維持 threads 之間對於 buffer 的同步化** 需要 `pthread lib` 的以下物件:  
+     - `mutex lock:` ts_queue 自己的鎖
+     - `condition variable:` 通知/控制 **producer threads** 以及 **consumer threads** 等待  
    ```cpp
     template <class T>
     TSQueue<T>::TSQueue(int buffer_size) : buffer_size(buffer_size) {
@@ -31,7 +35,8 @@
         pthread_cond_init(&cond_dequeue, nullptr); // 讓 consumer waiting 的條件變數
     }
    ```  
-2. destructor
+2. destructor:  
+   安全釋放 buffer 的記憶體空間以及同步化的資源(mutex lock, cond_enqueue, cond_dequeue)  
    ```cpp
     template <class T>
     TSQueue<T>::~TSQueue() {

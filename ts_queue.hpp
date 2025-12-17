@@ -5,6 +5,11 @@
 
 #define DEFAULT_BUFFER_SIZE 200
 
+
+static void cleanup_mutex_unlock(void* arg) {
+    pthread_mutex_unlock((pthread_mutex_t*)arg);
+}
+
 template <class T>
 class TSQueue {
 public:
@@ -81,6 +86,11 @@ void TSQueue<T>::enqueue(T item) {
 	// TODO: enqueues an element to the end of the queue
 
 	pthread_mutex_lock(&mutex); // lock mutex
+
+	// revision note:
+	// 註冊 cleanup handler: 若在此區塊被 cancel，會自動執行 cleanup_mutex_unlock 解鎖
+    pthread_cleanup_push(cleanup_mutex_unlock, &mutex);
+
 	// 1. 當 buffer is full, 用 busy waitting 卡 producer 持續等待直到 consumer dequeue
 	while (size == buffer_size) {
 		pthread_cond_wait(&cond_enqueue, &mutex);
@@ -99,6 +109,10 @@ T TSQueue<T>::dequeue() {
 
 	T item;
 	pthread_mutex_lock(&mutex);
+
+	// revision note:
+	// 註冊 cleanup handler
+    pthread_cleanup_push(cleanup_mutex_unlock, &mutex);
 
 	// 1. 當 buffer is empty, 用 busy waitting 持續等待直到 producer enqueue
 	while (size == 0) {

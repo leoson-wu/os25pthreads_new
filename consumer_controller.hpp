@@ -64,7 +64,19 @@ ConsumerController::ConsumerController(
 	high_threshold(high_threshold) {
 }
 
-ConsumerController::~ConsumerController() {}
+ConsumerController::~ConsumerController() {
+	// revision note:
+	// 先對所有 Consumer 發出 Cancel
+    for (Consumer* consumer : consumers) {
+        consumer->cancel();
+    }
+    // 等待它們全部結束並釋放記憶體
+    for (Consumer* consumer : consumers) {
+        consumer->join();
+        delete consumer;
+    }
+    consumers.clear();
+}
 
 void ConsumerController::start() {
 	// TODO: starts a ConsumerController thread
@@ -104,10 +116,15 @@ void* ConsumerController::process(void* arg) {
 
 		}else if (current_size < controller->low_threshold && controller->consumers.size() > 1) { // Scale down
 			int old_count = controller->consumers.size();
-			// 取得最後一個 consumer
+			// 0. 取得最後一個 consumer
 			Consumer* target = controller->consumers.back();
-			// cancel 這個 consumer thread, 在 consumer:process 結束時會自己釋放記憶體
+			// 1. cancel 這個 consumer thread, 在 consumer:process 結束時會自己釋放記憶體
 			target->cancel();
+			// revision note:
+			// 2. 等待 thread 結束
+			target->join();
+			// 3. 釋放 consumer 配置的記憶體
+			delete target;
 			// 從 controller 的 consumers list 中移除這個 consumer
 			controller->consumers.pop_back();
 

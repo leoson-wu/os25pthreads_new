@@ -57,13 +57,13 @@ void* Consumer::process(void* arg) {
  	pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, nullptr);
 
 	while (!consumer->is_cancel) {
-		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
+		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
 
 		// TODO: implements the Consumer's work
 		// consumer 負責從 worker_queue 中取出 item, 並丟到 output_queue 中
 		Item* item = consumer->worker_queue->dequeue();
 		
-		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
+		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
 
 		if (item == nullptr) {
 			consumer->output_queue->enqueue(nullptr);
@@ -74,15 +74,10 @@ void* Consumer::process(void* arg) {
 		item->val = consumer->transformer->consumer_transform(item->opcode, item->val);
 		// 3. 將 transform 後的 item 放入 output_queue
 		consumer->output_queue->enqueue(item);
-
-		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
-		
-		pthread_testcancel();
+		// 4. 不讓 comsumer 自行釋放 而透過 controller 統一釋放
+		// delete consumer;
 	}
-	// 若要被 cancel 的話, 釋放 consumer 的記憶體
-	if (consumer->is_cancel) {
-		delete consumer;
-	}
+	
 
 	return nullptr;
 }
