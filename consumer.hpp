@@ -62,7 +62,7 @@ void* Consumer::process(void* arg) {
 		// TODO: implements the Consumer's work
 		// consumer 負責從 worker_queue 中取出 item, 並丟到 output_queue 中
 		Item* item = consumer->worker_queue->dequeue();
-		
+
 		// 2. 拿到工作後，禁止被取消，確保 Item 不會丟失
 		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
 
@@ -75,7 +75,7 @@ void* Consumer::process(void* arg) {
 		item->val = consumer->transformer->consumer_transform(item->opcode, item->val);
 		// 3. 將 transform 後的 item 放入 output_queue
 		consumer->output_queue->enqueue(item);
-		// 4. 不讓 comsumer 自行釋放 而透過 controller 統一釋放
+		// 4. 不讓 consumer 自行釋放 而透過 controller 統一釋放
 		// delete consumer;
 	}
 	

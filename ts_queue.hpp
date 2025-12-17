@@ -6,10 +6,6 @@
 #define DEFAULT_BUFFER_SIZE 200
 
 
-static void cleanup_mutex_unlock(void* arg) {
-    pthread_mutex_unlock((pthread_mutex_t*)arg);
-}
-
 template <class T>
 class TSQueue {
 public:
@@ -29,6 +25,24 @@ public:
 
 	// return the number of elements in the queue
 	int get_size();
+
+	/*
+	實作 cleanup handler 
+	避免 threads 在 cond_wait 期間被 cancel 造成 
+	1. signal 遺失
+	2. mutex 永遠無法被 unlock
+	進而使系統 deadlock 的情況
+	*/  
+	static void cleanup_handler(void* arg) {
+        TSQueue<T>* queue = (TSQueue<T>*)arg;
+        
+		// 1. 補發 cond_enqueue 以及 cond_dequeue 的 signals
+        pthread_cond_signal(&queue->cond_enqueue);
+        pthread_cond_signal(&queue->cond_dequeue);
+        
+        // 2. 解鎖 Mutex
+        pthread_mutex_unlock(&queue->mutex);
+    }
 private:
 	// the maximum buffer size
 	int buffer_size;
@@ -85,17 +99,18 @@ template <class T>
 void TSQueue<T>::enqueue(T item) {
 	// TODO: enqueues an element to the end of the queue
 
-	pthread_mutex_lock(&mutex); // lock mutex
+	pthread_mutex_lock(&mutex);
 
-	// revision note:
-	// 註冊 cleanup handler: 若在此區塊被 cancel，會自動執行 cleanup_mutex_unlock 解鎖
-    pthread_cleanup_push(cleanup_mutex_unlock, &mutex);
+	// 預先註冊 cleanup_handler: 
+	// 若在此區塊被 cancel 則會執行 cleanup_handler 釋放鎖以及補發 signal
+    pthread_cleanup_push(TSQueue<T>::cleanup_handler, this);
 
-	// 1. 當 buffer is full, 用 busy waitting 卡 producer 持續等待直到 consumer dequeue
+	// 1. 當 buffer is full, 持續等待直到有 consumer dequeue
 	while (size == buffer_size) {
 		pthread_cond_wait(&cond_enqueue, &mutex);
 	}
-	pthread_cleanup_pop(0); // 取消註冊 cleanup handler，因為接下來不會再被 cancel 了
+
+	pthread_cleanup_pop(0); // 若正常離開區塊: 移除 cleanup handler 登記
 
 	// 2. 將 item 放入 buffer 的 tail
 	buffer[tail] = item;
@@ -112,16 +127,15 @@ T TSQueue<T>::dequeue() {
 	T item;
 	pthread_mutex_lock(&mutex);
 
-	// revision note:
-	// 註冊 cleanup handler
-    pthread_cleanup_push(cleanup_mutex_unlock, &mutex);
+	// 註冊 cleanup_handler
+	pthread_cleanup_push(TSQueue<T>::cleanup_handler, this);
 
-	// 1. 當 buffer is empty, 用 busy waitting 持續等待直到 producer enqueue
+	// 1. 當 buffer is empty, 持續等待直到有 producer enqueue
 	while (size == 0) {
 		pthread_cond_wait(&cond_dequeue, &mutex);
 	}
-	// revision note:
-	pthread_cleanup_pop(0); // 取消註冊 cleanup handler
+	pthread_cleanup_pop(0); // 若正常離開區塊: 移除 cleanup handler 登記
+
 	// 2. 從 buffer 的 head 拿出 item
 	item = buffer[head];
 	head = (head + 1) % buffer_size; // update 頭端的 index

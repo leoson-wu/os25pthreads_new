@@ -12,8 +12,26 @@
 
 ### TSQueue
 在`ts_queue.hpp`中利用 pthread lib 實作 threads safe queue，作為 buffer 空間的資料結構，  
-目的是可以支援多個 threads cocurrently 的 **共享**/**存取** 這個空間  
-1. constructor:  
+目的是可以支援多個 threads concurrently 的 **共享**/**存取** 這個空間
+1. cleanup_handler:  
+   於 `Class TSQueue` 中實作 public member function `cleanup handler` 避免 threads 在 cond_wait 期間被 cancel 造成:  
+   - signal 遺失
+   - mutex 無法被正常 unlock
+   -> 進而使系統 deadlock 的情況  
+   ```cpp
+	static void cleanup_handler(void* arg) {
+        TSQueue<T>* queue = (TSQueue<T>*)arg;
+        
+		// 1. 補發 cond_enqueue 以及 cond_dequeue 的 signals
+        pthread_cond_signal(&queue->cond_enqueue);
+        pthread_cond_signal(&queue->cond_dequeue);
+        
+        // 2. 解鎖 Mutex
+        pthread_mutex_unlock(&queue->mutex);
+    }
+    ```
+
+2. constructor:  
    - 配置 **buffer** 空間，並以 **queue** 的結構管理，支援 `enqueue()`, `dequeue()`, `get_size()` 的 member functions  
    - 為了避免 **race condition** 以及 **維持 threads 之間對於 buffer 的同步化** 需要 `pthread lib` 的以下物件:  
      - `mutex lock:` ts_queue 自己的鎖
@@ -35,7 +53,7 @@
         pthread_cond_init(&cond_dequeue, nullptr); // 讓 consumer waiting 的條件變數
     }
    ```  
-2. destructor:  
+3. destructor:  
    安全釋放 buffer 的記憶體空間以及同步化的資源(mutex lock, cond_enqueue, cond_dequeue)  
    ```cpp
     template <class T>
@@ -50,17 +68,32 @@
         pthread_cond_destroy(&cond_dequeue);
     }
     ```
-3. enqueue
+4. enqueue:  
+   其功能為從 `TSQueue` 的 tail 放入一個 item  
+   其中處理同步化的 pthread工具 包含:  
+   - mutex lock: 確保threads之間互斥存取，保護 TSQueue 中的共享變數 `buffer`, `tail`, `size`  
+   - cleanup_handler: 處理當 thread 在 condition wait 時可能被 cancel 而帶著lock死去或丟失signal的情況  
+   - condition wait: 處理當 buffer 滿時 `producer thread` 必須 wait on `cond_enqueue` 直到有 consumer dequeue 而 signal 它  
+   - condition signal: 若有 consumer 因為 TSQueue 空而 wait on `cond_dequeue` 時去 signal 它  
+   
    ```cpp
     template <class T>
     void TSQueue<T>::enqueue(T item) {
         // TODO: enqueues an element to the end of the queue
 
         pthread_mutex_lock(&mutex);
-        // 1. 當 buffer is full, 用 busy waitting 卡 producer 持續等待直到 consumer dequeue
+
+        // 預先註冊 cleanup_handler: 
+        // 若在此區塊被 cancel 則會執行 cleanup_handler 釋放鎖以及補發 signal
+        pthread_cleanup_push(TSQueue<T>::cleanup_handler, this);
+
+        // 1. 當 buffer is full, 持續等待直到有 consumer dequeue
         while (size == buffer_size) {
             pthread_cond_wait(&cond_enqueue, &mutex);
         }
+        
+        pthread_cleanup_pop(0); // 若正常離開區塊: 移除 cleanup handler 登記
+
         // 2. 將 item 放入 buffer 的 tail
         buffer[tail] = item;
         tail = (tail + 1) % buffer_size; // update 尾端的 index
@@ -69,7 +102,13 @@
         pthread_mutex_unlock(&mutex);
     }
     ```
-4. dequeue
+5. dequeue:
+   其功能為從 `TSQueue` 的 head 拿出一個 item  
+   其中處理同步化的 pthread工具 包含:  
+   - mutex lock: 確保threads之間互斥存取，保護 TSQueue 中的共享變數 `buffer`, `head`, `size`  
+   - cleanup_handler: 處理當 thread 在 condition wait 時可能被 cancel 而帶著lock死去或丟失signal的情況  
+   - condition wait: 處理當 buffer 空時 `consumer thread` 必須 wait on `cond_dequeue` 直到有 producer enqueue 而 signal 它  
+   - condition signal: 若有 produce 因為 TSQueue 滿而 wait on `cond_enqueue` 時去 signal 它  
    ```cpp
     template <class T>
     T TSQueue<T>::dequeue() {
@@ -78,10 +117,15 @@
         T item;
         pthread_mutex_lock(&mutex);
 
-        // 1. 當 buffer is empty, 用 busy waitting 持續等待直到 producer enqueue
+        // 註冊 cleanup_handler
+        pthread_cleanup_push(TSQueue<T>::cleanup_handler, this);
+
+        // 1. 當 buffer is empty, 則持續等待直到有 producer enqueue
         while (size == 0) {
             pthread_cond_wait(&cond_dequeue, &mutex);
         }
+        pthread_cleanup_pop(0); // 若正常離開區塊: 移除 cleanup handler 登記
+        
         // 2. 從 buffer 的 head 拿出 item
         item = buffer[head];
         head = (head + 1) % buffer_size; // update 頭端的 index
@@ -92,7 +136,10 @@
         return item;
     }
    ```
-5. get_size
+6. get_size:
+   其功為取得`TSQueue`目前的 item 數  
+   其中的同步化工具為:
+   - mutex lock: 下面**問題探討**有說名其功用
    ```cpp
     template <class T>
     int TSQueue<T>::get_size() {
@@ -113,7 +160,7 @@
 
 ### Reader
 在`reader.hpp`中助教已實作 reader thread。  
-1. start (助教已實作)  
+1. start: (助教已實作)  
    
    ```cpp
     void Reader::start() {
@@ -121,16 +168,22 @@
         pthread_create(&t, 0, Reader::process, (void*)this);
     }
    ```
-2. process (助教已實作, skip)
+2. process: 助教已實作, skip
 ### Producer
-1. start
+1. start:
+   Activate `produce thread`  
    ```cpp
     void Producer::start() {
         // TODO: starts a Producer thread
         pthread_create(&t, 0, Producer::process, (void*)this);
     }
    ```
-2. process
+2. process:  
+   `producer thread` 的功能是
+   -> 不斷從 `input_queue` 中取出 item  
+   -> 按照 opcode 對該 item 做 transform  
+   -> 把 item 放入 `woker_queue` 中  
+   若取出的是 nullptr 則 回傳一個 nullptr  
    
    ```cpp
     void* Producer::process(void* arg) {
@@ -194,7 +247,8 @@
 
 
 ### Consumer
-1. start
+1. start:  
+   Activate `consumer thread`
    ```cpp
     void Consumer::start() {
         // TODO: starts a Consumer thread
