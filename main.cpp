@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdlib.h>
+#include <chrono>
 #include "ts_queue.hpp"
 #include "item.hpp"
 #include "reader.hpp"
@@ -7,7 +8,7 @@
 #include "producer.hpp"
 #include "consumer_controller.hpp"
 
-#define READER_QUEUE_SIZE 200
+#define READER_QUEUE_SIZE 5
 #define WORKER_QUEUE_SIZE 200
 #define WRITER_QUEUE_SIZE 4000
 #define CONSUMER_CONTROLLER_LOW_THRESHOLD_PERCENTAGE 20
@@ -15,6 +16,12 @@
 #define CONSUMER_CONTROLLER_CHECK_PERIOD 1000000
 
 int main(int argc, char** argv) {
+
+	//start the clock
+	using Clock = std::chrono::steady_clock;
+    auto start = Clock::now();
+
+
 	assert(argc == 4);
 
 	int n = atoi(argv[1]);
@@ -84,6 +91,13 @@ int main(int argc, char** argv) {
 	delete input_queue;
 	delete worker_queue;
 	delete output_queue;
+
+
+	auto end = Clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+    std::cout << "Total execution time: "
+              << elapsed.count() << " ms" << std::endl;
 
 	return 0;
 }

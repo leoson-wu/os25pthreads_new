@@ -1,4 +1,4 @@
-# Pthreads Implementation Report
+# Pthreads Report
 
 ## 組員貢獻度表格
 
@@ -7,6 +7,132 @@
 | Implementation | 吳征彥、許恩嘉 | 資工碩二、資應碩二 |
 | Experiment |  吳征彥、許恩嘉 | 資工碩二、資應碩二 |
 | Report |  吳征彥、許恩嘉 | 資工碩二、資應碩二 |
+
+
+# Experiment
+### Original Parameter
+We use `tests/00.in` as the testing data of our experiment  
+
+#### Experimental Result0
+![image0](images\base.png)
+### Different values of CONSUMER_CONTROLLER_CHECK_PERIOD
+#### Experimental setting 1 
+```cpp
+#define READER_QUEUE_SIZE 200
+#define WORKER_QUEUE_SIZE 200
+#define WRITER_QUEUE_SIZE 4000
+#define CONSUMER_CONTROLLER_LOW_THRESHOLD_PERCENTAGE 20
+#define CONSUMER_CONTROLLER_HIGH_THRESHOLD_PERCENTAGE 80
+#define CONSUMER_CONTROLLER_CHECK_PERIOD 10000
+```
+#### Experimental result 1
+![image1](images\period10000.png)
+#### Discussion 1
+
+
+
+#### Experimental setting 2 
+```cpp
+#define READER_QUEUE_SIZE 200
+#define WORKER_QUEUE_SIZE 200
+#define WRITER_QUEUE_SIZE 4000
+#define CONSUMER_CONTROLLER_LOW_THRESHOLD_PERCENTAGE 20
+#define CONSUMER_CONTROLLER_HIGH_THRESHOLD_PERCENTAGE 80
+#define CONSUMER_CONTROLLER_CHECK_PERIOD 100
+```
+#### Experimental result 2
+![image2](images\period100.png)
+#### Discussion 2    
+---
+### Different values of CONSUMER_CONTROLLER_LOW_THRESHOLD_PERCENTAGE and CONSUMER_CONTROLLER_HIGH_THRESHOLD_PERCENTAGE
+#### Experimental setting 3 
+```cpp
+#define READER_QUEUE_SIZE 200
+#define WORKER_QUEUE_SIZE 200
+#define WRITER_QUEUE_SIZE 4000
+#define CONSUMER_CONTROLLER_LOW_THRESHOLD_PERCENTAGE 45
+#define CONSUMER_CONTROLLER_HIGH_THRESHOLD_PERCENTAGE 55
+#define CONSUMER_CONTROLLER_CHECK_PERIOD 1000000
+```
+#### Experimental result 3
+![image3](images\threshold45_55.png)
+#### Discussion 3 
+
+
+#### Experimental setting 4 
+```cpp
+#define READER_QUEUE_SIZE 200
+#define WORKER_QUEUE_SIZE 200
+#define WRITER_QUEUE_SIZE 4000
+#define CONSUMER_CONTROLLER_LOW_THRESHOLD_PERCENTAGE 5
+#define CONSUMER_CONTROLLER_HIGH_THRESHOLD_PERCENTAGE 95
+#define CONSUMER_CONTROLLER_CHECK_PERIOD 1000000
+```
+#### Experimental result 4
+![image4](images\threshold5_95.png)
+#### Discussion 4 
+---
+### Different values of WORKER_QUEUE_SIZE
+#### Experimental setting 5 
+```cpp
+#define READER_QUEUE_SIZE 200
+#define WORKER_QUEUE_SIZE 20
+#define WRITER_QUEUE_SIZE 4000
+#define CONSUMER_CONTROLLER_LOW_THRESHOLD_PERCENTAGE 20
+#define CONSUMER_CONTROLLER_HIGH_THRESHOLD_PERCENTAGE 80
+#define CONSUMER_CONTROLLER_CHECK_PERIOD 1000000
+
+```
+#### Experimental result 5
+![image5](images\workerQsize20.png)
+#### Discussion 5
+
+#### Experimental setting 6 
+```cpp
+#define READER_QUEUE_SIZE 200
+#define WORKER_QUEUE_SIZE 240
+#define WRITER_QUEUE_SIZE 4000
+#define CONSUMER_CONTROLLER_LOW_THRESHOLD_PERCENTAGE 20
+#define CONSUMER_CONTROLLER_HIGH_THRESHOLD_PERCENTAGE 80
+#define CONSUMER_CONTROLLER_CHECK_PERIOD 1000000
+```
+#### Experimental result 6
+![image6](images\wokerQsize240.png)
+#### Discussion 6 
+---
+### WRITER_QUEUE_SIZE is very small
+#### Experimental setting 7 
+```cpp
+#define READER_QUEUE_SIZE 200
+#define WORKER_QUEUE_SIZE 200
+#define WRITER_QUEUE_SIZE 40
+#define CONSUMER_CONTROLLER_LOW_THRESHOLD_PERCENTAGE 20
+#define CONSUMER_CONTROLLER_HIGH_THRESHOLD_PERCENTAGE 80
+#define CONSUMER_CONTROLLER_CHECK_PERIOD 1000000
+```
+#### Experimental result 7
+![image7](images\writterQsize40.png)
+#### Discussion 7 
+---
+### READER_QUEUE_SIZE is very small
+#### Experimental setting 8 
+```cpp
+#define READER_QUEUE_SIZE 5
+#define WORKER_QUEUE_SIZE 200
+#define WRITER_QUEUE_SIZE 4000
+#define CONSUMER_CONTROLLER_LOW_THRESHOLD_PERCENTAGE 20
+#define CONSUMER_CONTROLLER_HIGH_THRESHOLD_PERCENTAGE 80
+#define CONSUMER_CONTROLLER_CHECK_PERIOD 1000000
+```
+#### Experimental result 8
+![image8-1](images\readerQsize5_1.png)
+
+![image8-2](images\readerQsize5_2.png)
+#### Discussion 8 
+---
+### Conclusion
+
+# Implmentation
 
 ## Code Structure
 
@@ -261,7 +387,7 @@
     }
    ```
 2. cancel:  
-   題目要求 `consumer thread` 的數量隨 `work_queue` 中的 `size` 動態變動的。  
+   題目要求 `consumer thread` 的數量隨 `worker_queue` 中的 `size` 動態變動的。  
    這邊先去設定`is_cancel`的狀態，再透過 `pthread_cancel` 做延遲 cancel。  
    `pthread_cancel(t)` 的作用並非立即取消 thread t，而是透過向該 thread 發送**取消請球**，再觀察它的**取消狀態(is_cancel)**以及**取消類型(type)**，  
    等到 **取消點** 像是 **pthread_cond_wait** 或 **pthread_testcancel()** 才會真正的依據其 **取消狀態** 做取消。
@@ -278,7 +404,7 @@
    因為`consumer thread`可以被動態取消，若其取消狀態為 `false` (is_cancel == false)，  
    ->則進入 `while迴圈` 執行接下來的動作:    
    1. 透過 `pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);` 將 thread 的取消狀態設定成`ENABLE`，允許在**還沒拿到item時(可能等在cond_dequeue中)**被controller動態殺掉。
-   2. 當consumer順利地取出item之後，它的取消狀態要透過`pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);`被改成靜止取消的狀態，避免握有 item 的被`consumer thread`被取消而丟失 item。   
+   2. 當consumer順利地取出item之後，它的取消狀態要透過`pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);`被改成禁止取消的狀態，避免握有 item 的被`consumer thread`被取消而丟失 item。   
    3. 接下來，透過`Item* item = consumer->worker_queue->dequeue();`從`worker_queue`中拿到 item  
    4. 對item做`consumer_transform`，過程中人要確保不被取消。  
    5. 回圈內的最後一步是，將 transformed 過後的 item 安全的 enqueue 到 `output_queue`，之後回到迴圈的開頭等待新工作。
