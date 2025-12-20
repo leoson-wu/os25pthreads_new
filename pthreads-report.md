@@ -154,8 +154,8 @@
    - **問題探討:**  
    在 get_size() 的實作中為什麼要加上 `mutex lock` 來保護 `size` 這個變數?  
    他明明只是**一條讀記憶體的指令(MOV)**，理論上不會產生 race condition，跟課堂中的例子(counter++)的情況不一樣。  
-   - **解釋:**
-   在查詢相關資料後，再多核且多執行緒的環境下，每個 CPU 有自己的 local cache，如果一個thread 在自己的 local cache 改變了 size 的值但並未更新到 main memory 其他 thread (e.g., comsumerController) 有可能讀到舊的值，而pthread 的 mutex lock 工具很強大，可以用來**同步記憶體**，所以在這邊的作用不是保證互斥，而是做記憶體階層的同步。   
+   - **解釋:**  
+   在查詢相關資料後，在多核且多執行緒的環境下，每個 CPU 有自己的 local cache，如果一個 thread 在自己的 local cache 改變了 size 的值但並未更新到 main memory 其他 thread (e.g., comsumerController) 有可能讀到舊的值，而pthread 的 mutex lock 工具很強大，可以用來**同步記憶體**，所以在這邊的作用不是保證互斥，而是做記憶體階層的同步。   
 
 
 ### Reader
@@ -168,10 +168,10 @@
         pthread_create(&t, 0, Reader::process, (void*)this);
     }
    ```
-2. process: 助教已實作, skip
+2. process: 助教已實作，skip
 ### Producer
 1. start:
-   Activate `produce thread`  
+   Activate this `produce thread`  
    ```cpp
     void Producer::start() {
         // TODO: starts a Producer thread
@@ -179,7 +179,7 @@
     }
    ```
 2. process:  
-   `producer thread` 的功能是
+   `producer thread` 的功能是  
    -> 不斷從 `input_queue` 中取出 item  
    -> 按照 opcode 對該 item 做 transform  
    -> 把 item 放入 `woker_queue` 中  
@@ -212,11 +212,12 @@
    在迴圈中為什麼要用無窮 while(true) 迴圈的寫法，從 input_queue 中不斷取 item，直到取到 nullptr?  
    為何不是使用 `while(input_queue->get_size() > 0)` 先做檢查後才去取得item?  
    - **解釋:**  
-   在 multi-thread programming 的環境下，會發生所謂的 **check-then-act** 的情況，當一個thread check queue 有東西後，準備拿東西之前，就已經被contex switch，其他thread在原本的thread 還沒取 item 時，另一條 thread 可能優先把最後一個 item 取走(即 contex switch 發生在 check 與 act 之間)，**race conditoin** 就發生了。  
+   在 multi-thread programming 的環境下，會發生所謂的 **check-then-act** 的情況，當一個 thread check queue 有東西後，準備拿東西之前，就已經被contex switch，其他thread在原本的thread 還沒取 item 時，另一條 thread 可能優先把最後一個 item 取走(即 contex switch 發生在 check 與 act 之間)，**race conditoin** 就發生了。  
    為了避免上述情況，我們可以改為先取 item 之後再來判斷內容物狀態(是不是 nullptr)，即可化解上述 race condition。
 
 ### Writer
-1. start
+1. start:
+   Activate this `writer thread`  
    ```cpp
     void Writer::start() {
         // TODO: starts a Writer thread
@@ -224,7 +225,10 @@
         pthread_create(&t, 0, Writer::process, (void*)this); 
     }
    ```
-2. process
+2. process:  
+   `writer thread` 的作用是從 `output_queue` 總共取出 `expected_line` 個 `transform 過後的 items` 並寫到 output_file，  
+   每個 `item` 一一對應 `expected_line` 行內容  
+   為每個 item 最後一步處理，寫入檔案後釋放 item 的記憶體  
    ```cpp
     void* Writer::process(void* arg) {
         // TODO: implements the Writer's work
@@ -237,9 +241,10 @@
             Item* item = writer->output_queue->dequeue();
 
             // 2. 將 item 寫入 output file
-            
             writer->ofs << *item;
-            delete item; // 寫入後釋放 item 記憶體
+
+            // 3. 寫入後釋放 item 記憶體
+            delete item; 
         }
         return nullptr;
     }
@@ -248,14 +253,18 @@
 
 ### Consumer
 1. start:  
-   Activate `consumer thread`
+   Activate this `consumer thread`
    ```cpp
     void Consumer::start() {
         // TODO: starts a Consumer thread
         pthread_create(&t, 0, Consumer::process, (void*)this);
     }
    ```
-2. cancel
+2. cancel:  
+   題目要求 `consumer thread` 的數量隨 `work_queue` 中的 `size` 動態變動的。  
+   這邊先去設定`is_cancel`的狀態，再透過 `pthread_cancel` 做延遲 cancel。  
+   `pthread_cancel(t)` 的作用並非立即取消 thread t，而是透過向該 thread 發送**取消請球**，再觀察它的**取消狀態(is_cancel)**以及**取消類型(type)**，  
+   等到 **取消點** 像是 **pthread_cond_wait** 或 **pthread_testcancel()** 才會真正的依據其 **取消狀態** 做取消。
    ```cpp
     int Consumer::cancel() {
         // TODO: cancels the consumer thread
@@ -263,7 +272,16 @@
         return pthread_cancel(t);
     }
    ```
-3. process
+3. process:  
+   `consumer` 的工作為負責從 worker_queue 中取出 item,經過 consumer_transform 後，丟到 output_queue 中。 
+   在process的一開始透過 pthread 的`pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, nullptr);`將取消類型設定為延遲取消，目的是讓thread能夠透過檢查狀態以及在安全的取消點被取消。   
+   因為`consumer thread`可以被動態取消，若其取消狀態為 `false` (is_cancel == false)，  
+   ->則進入 `while迴圈` 執行接下來的動作:    
+   1. 透過 `pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);` 將 thread 的取消狀態設定成`ENABLE`，允許在**還沒拿到item時(可能等在cond_dequeue中)**被controller動態殺掉。
+   2. 當consumer順利地取出item之後，它的取消狀態要透過`pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);`被改成靜止取消的狀態，避免握有 item 的被`consumer thread`被取消而丟失 item。   
+   3. 接下來，透過`Item* item = consumer->worker_queue->dequeue();`從`worker_queue`中拿到 item  
+   4. 對item做`consumer_transform`，過程中人要確保不被取消。  
+   5. 回圈內的最後一步是，將 transformed 過後的 item 安全的 enqueue 到 `output_queue`，之後回到迴圈的開頭等待新工作。
    ```cpp
     void* Consumer::process(void* arg) {
         Consumer* consumer = (Consumer*)arg;
@@ -273,13 +291,14 @@
         pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, nullptr);
 
         while (!consumer->is_cancel) {
-            pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
+            pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
 
             // TODO: implements the Consumer's work
-            // consumer 負責從 worker_queue 中取出 item, 並丟到 output_queue 中
+            // 0. consumer 負責從 worker_queue 中取出 item, 並丟到 output_queue 中
             Item* item = consumer->worker_queue->dequeue();
-            
-            pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
+
+            // 1. 拿到工作後，禁止被取消，確保 Item 不會丟失
+            pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, nullptr);
 
             if (item == nullptr) {
                 consumer->output_queue->enqueue(nullptr);
@@ -290,29 +309,39 @@
             item->val = consumer->transformer->consumer_transform(item->opcode, item->val);
             // 3. 將 transform 後的 item 放入 output_queue
             consumer->output_queue->enqueue(item);
-
-            pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
-            
-            pthread_testcancel();
+            // 4. 不讓 consumer 自行釋放 而透過 controller 統一釋放
+            // 該consumer會回到迴圈一開始，等待新的工作。
+            // delete consumer;
         }
-        // 若要被 cancel 的話, 釋放 consumer 的記憶體
-        if (consumer->is_cancel) {
-            delete consumer;
-        }
+        
 
         return nullptr;
     }
    ```
 
 ### ConsumerController
-1. start
+1. start:
+   Activate this `ConsumerController thread`  
    ```cpp
     void ConsumerController::start() {
         // TODO: starts a ConsumerController thread
         pthread_create(&t, 0, ConsumerController::process, (void*)this);
     }
    ```
-2. process  
+2. process:
+   `ConsumerController`(以下簡稱controller)做的事是: 定期的去 check `woker_queue` 的 size，並根據 size 去決定要**新增consumer(scale up)**或**砍掉consumer(scale down)**  
+   從程式碼的行為來說明:  
+   1. 整個系統中只會有一個Controller，在進入`while(true)`迴圈後，會先透過`usleep(controller->check_period);`等待 check_period 的時間(定期檢查)  
+   2. `int current_size = controller->worker_queue->get_size();`去 access 目前 worker_queue 的 size  
+   3. 根據這個 size 去判斷要執行 **scale up** 或 **scale down** 的分支行為  
+      1. 若 current_size > 上限(controller->high_threshold)時: 配置一個新的 `consumer thread` 並 啟動它，然後新增這個 consumer 到 controller 的 consumers list 中，方便後續管理。  
+      2. 若 current_size < 下限(controller->low_threshold)時:  
+         1. 從consumers list 中取得最後一個 consumer (first in first out)
+         2. `target->cancel();`並送出一個cancel請求，欲cancel掉它
+         3. `target->join();`等待這個`consumer thread`安全的被取消後
+         4. `delete target;`才去釋放其對應的記憶體空間
+         5. 上述的 scale down 完整操作完成後，最後才從 controller 的 consumers list 中移除這個 consumer
+   4. 若`沒有要執行scale`或`執行完scale`的操作後，回到迴圈的一開始等待下一次的判斷與操作  
    ```cpp
     void* ConsumerController::process(void* arg) {
         // TODO: implements the ConsumerController's work
@@ -347,10 +376,18 @@
 
             }else if (current_size < controller->low_threshold && controller->consumers.size() > 1) { // Scale down
                 int old_count = controller->consumers.size();
-                // 取得最後一個 consumer
+
+                // 0. 取得最後一個 consumer
                 Consumer* target = controller->consumers.back();
-                // cancel 這個 consumer thread, 在 consumer:process 結束時會自己釋放記憶體
+
+                // 1. cancel 這個 consumer thread
                 target->cancel();
+                // revision note:
+                // 2. 等待 thread 結束
+                target->join();
+                // 3. 釋放 consumer 配置的記憶體
+                delete target;
+
                 // 從 controller 的 consumers list 中移除這個 consumer
                 controller->consumers.pop_back();
 
@@ -365,6 +402,24 @@
    ```
 
 ### main
+主程式將透過上述時做完成的執行續物件，模擬題目中描述的工作環境。
+1. 初始化題目中的三個 thread safe queues: `input_queue`, `worker_queue`, `output_queue`。
+2. 初始化 transformer 為後續 items 做 transform 的動作
+3. 按題目要求初始化`1 reader thread`, `1 writer thread`, `4 producer threads`  
+4. 初始化 controller 其中屬於 controller 的參數有:  
+   1. `worker_queue`  
+   2. `output_queue`
+   3. `transformer`
+   4. `CONSUMER_CONTROLLER_CHECK_PERIOD`
+   5. `low_threshold = WORKER_QUEUE_SIZE * CONSUMER_CONTROLLER_LOW_THRESHOLD_PERCENTAGE / 100;`
+   6. `high_threshold = WORKER_QUEUE_SIZE * CONSUMER_CONTROLLER_HIGH_THRESHOLD_PERCENTAGE / 100;`
+5. 啟動`reader thread`, `writer thread`, `4 producer threads`, (起初不包含`consumer thread`)
+6. 啟動`controller`，開始模擬工作，直到寫檔案的任務結束  
+7. `main`必須要依序等待各個thread完成對應階段的工作才可以terminate，其中必須依序等待:  
+   1. reader 讀完整個 input file 後
+   2. producer 將 items 全部送完
+   3. writer 寫完所有內容到 ouput file 後
+8. 工作完成後，釋放所有thread的資源，安全的terminate  
 ```cpp
     int main(int argc, char** argv) {
         assert(argc == 4);
